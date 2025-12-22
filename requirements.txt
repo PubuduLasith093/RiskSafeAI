@@ -1,0 +1,37 @@
+# Core dependencies
+python-dotenv==1.1.1
+structlog
+pydantic>=2.0.0
+
+# LangChain ecosystem
+langchain==0.3.27
+langchain-community==0.3.27
+langchain-core==0.3.72
+langgraph>=0.2.0  # Required for ReAct agent workflow
+
+# LLM providers (OpenAI aligned with compliance_project)
+langchain-openai==0.2.10
+openai>=1.0.0
+
+# Vector database
+pinecone>=8.0.0
+langchain-pinecone>=0.1.0
+
+# Web search (Tavily for ReAct agent)
+tavily-python>=0.3.0
+
+# Document processing
+docx2txt==0.9
+python-multipart==0.0.20
+
+# FastAPI web framework
+fastapi==0.115.6
+uvicorn==0.32.1
+Jinja2==3.1.4
+
+# Development
+ipykernel==6.30.0
+langsmith
+# Hybrid search and Reranking
+cohere
+pinecone-text

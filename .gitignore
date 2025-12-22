@@ -1,0 +1,40 @@
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyo
+env/
+.venv/
+venv/
+*.egg-info/
+*.egg
+*.log
+
+# OS & editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Vector DB artifacts (not needed with Pinecone cloud)
+*.pkl
+
+# Data & archive
+data/
+archive/
+main_archive/
+*.pdf
+
+# Secrets & configs
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Build/Dist
+dist/
+build/
+compliance_chat.egg-info/
+flow.excalidraw

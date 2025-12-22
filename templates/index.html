@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RiskSafeAI</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    /* Minimal inline tweaks; most styles live in styles.css */
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    let sessionId = localStorage.getItem('risksafe_session_id') || '';
+
+    async function uploadFiles(evt) {
+      evt.preventDefault();
+      const input = $('#file-input');
+      const files = input.files;
+      if (!files || files.length === 0) {
+        toast('Please choose at least one file');
+        return;
+      }
+      toggleIndexing(true);
+      try {
+        const fd = new FormData();
+        for (const f of files) fd.append('files', f);
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+        const data = await res.json();
+        sessionId = data.session_id;
+        localStorage.setItem('risksafe_session_id', sessionId);
+        $('#chat').style.display = 'block';
+        toast('Indexing complete. You can chat now.');
+      } catch (e) {
+        console.error(e);
+        toast('Indexing failed. Try re-uploading.');
+      } finally {
+        toggleIndexing(false);
+      }
+    }
+
+    async function sendMessage() {
+      const input = $('#message-input');
+      const text = input.value.trim();
+      if (!text) { return; }
+
+      // Use default session if none exists
+      if (!sessionId) {
+        sessionId = 'default';
+        localStorage.setItem('risksafe_session_id', sessionId);
+      }
+
+      appendMessage('user', text);
+      input.value = '';
+
+      // Add a thinking bubble
+      const thinkingId = 'thinking-' + Date.now();
+      appendThinkingBubble(thinkingId);
+      toggleThinking(true);
+
+      try {
+        const res = await fetch('/react/obligation_register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: text })
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.detail || 'Chat failed');
+        }
+
+        const data = await res.json();
+        removeThinkingBubble(thinkingId);
+        appendMessage('assistant', data.answer);
+      } catch (e) {
+        console.error(e);
+        removeThinkingBubble(thinkingId);
+        appendErrorMessage('Thinking failed: ' + e.message);
+      } finally {
+        toggleThinking(false);
+      }
+    }
+
+    function appendErrorMessage(text) {
+      const container = $('#messages');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble assistant error-bubble';
+      bubble.style.backgroundColor = '#ffebee';
+      bubble.style.color = '#c62828';
+      bubble.style.border = '1px solid #ef9a9a';
+      bubble.innerHTML = '<strong>Error:</strong><br><pre style="white-space: pre-wrap; font-size: 0.85em;">' + text + '</pre>';
+      container.appendChild(bubble);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendMessage(role, text) {
+      const container = $('#messages');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (role === 'user' ? 'user' : 'assistant');
+
+      if (role === 'assistant') {
+        // Render Markdown for assistant
+        bubble.innerHTML = marked.parse(text || '');
+      } else {
+        bubble.textContent = text;
+      }
+
+      container.appendChild(bubble);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendThinkingBubble(id) {
+      const container = $('#messages');
+      const bubble = document.createElement('div');
+      bubble.id = id;
+      bubble.className = 'bubble assistant thinking-bubble';
+      bubble.innerHTML = '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+      container.appendChild(bubble);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function removeThinkingBubble(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    function toggleIndexing(on) {
+      $('#upload-btn').disabled = on;
+      $('#indexing').style.display = on ? 'inline-block' : 'none';
+    }
+
+    function toggleThinking(on) {
+      $('#send-btn').disabled = on;
+      $('#thinking').style.display = on ? 'inline-block' : 'none';
+    }
+
+    function toast(msg) {
+      const el = $('#toast');
+      el.textContent = msg;
+      el.style.opacity = '1';
+      setTimeout(() => el.style.opacity = '0', 2500);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      // Always show chat interface (database already populated)
+      $('#chat').style.display = 'block';
+      $('#uploader').style.display = 'none';  // Hide upload section
+
+      // Set default session if none exists
+      if (!sessionId) {
+        sessionId = 'default';
+        localStorage.setItem('risksafe_session_id', sessionId);
+      }
+
+      $('#upload-form').addEventListener('submit', uploadFiles);
+      $('#send-btn').addEventListener('click', sendMessage);
+      $('#message-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      });
+      const drop = $('#dropzone');
+      drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        drop.classList.remove('hover');
+        $('#file-input').files = e.dataTransfer.files;
+      });
+    });
+  </script>
+  <meta name="color-scheme" content="light dark" />
+</head>
+
+<body>
+  <header>
+    <h1>RiskSafeAI - Compliance Document Chat</h1>
+  </header>
+
+  <main>
+    <section id="uploader">
+      <form id="upload-form">
+        <div id="dropzone">
+          <p>Drag and drop compliance documents here</p>
+          <p>or</p>
+          <label class="btn">
+            Choose files
+            <input id="file-input" type="file" name="files" multiple hidden />
+          </label>
+        </div>
+        <button id="upload-btn"
+          style="background-color: rgb(0, 94, 225); color: white; border-radius: 6px; cursor: pointer;"
+          type="submit">Upload & Index</button>
+        <span id="indexing" class="hint" style="display:none;">Indexing…</span>
+      </form>
+    </section>
+
+    <section id="chat" style="display:none;">
+      <div id="messages" class="messages"></div>
+      <div class="composer">
+        <textarea id="message-input" rows="2" placeholder="Ask about your compliance documents…"></textarea>
+        <button id="send-btn"
+          style="background-color: rgb(0, 94, 225); color: white; border-radius: 6px; cursor: pointer;">Send</button>
+        <span id="thinking" class="hint" style="display:none;">Thinking…</span>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+</body>
+
+</html>

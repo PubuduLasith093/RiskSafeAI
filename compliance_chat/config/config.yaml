@@ -1,0 +1,45 @@
+embedding_model:
+  provider: "openai"
+  model_name: "text-embedding-3-large"
+
+pinecone:
+  index_name: "asic-compliance-rag"  # Aligned with compliance_project
+  environment: "us-east-1"
+  dimension: 3072  # Matches OpenAI text-embedding-3-large
+  metric: "dotproduct"  # Aligned with compliance_project
+
+retriever:
+  top_k: 20  # Increased for ReAct agent
+  search_type: "similarity"  # ReAct agent uses similarity with score threshold
+  score_threshold: 0.25  # Minimum score for dotproduct metric
+
+# ReAct Agent Configuration
+react_agent:
+  max_iterations: 30
+  temperature: 0
+  llm_model: "gpt-4o"
+  embedding_model: "text-embedding-3-large"
+  embedding_dimensions: 3072
+
+  # Business type to expected obligation ranges
+  business_mappings:
+    fintech:
+      lending:
+        regulators: ["ASIC"]  # TODO: Add APRA, AML, Consumer, Privacy, FairWork, Treasury
+        expected_range: [10, 30]
+      payments:
+        regulators: ["ASIC"]
+        expected_range: [10, 25]
+      investment:
+        regulators: ["ASIC"]
+        expected_range: [10, 30]
+    general_business:
+      regulators: ["ASIC"]
+      expected_range: [5, 15]
+
+llm:
+  openai:
+    provider: "openai"
+    model_name: "gpt-4o"
+    temperature: 0
+    max_output_tokens: 4000  # Increased for comprehensive obligation registers
