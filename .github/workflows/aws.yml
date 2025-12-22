@@ -6,7 +6,7 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-southeast-2
   ECR_REPOSITORY: risksafeai-repo
   ECS_SERVICE: risksafeai-service
   ECS_CLUSTER: risksafeai-cluster

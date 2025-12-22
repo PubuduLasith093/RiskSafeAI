@@ -1,8 +1,8 @@
 {
   "family": "risksafeai-td",
   "networkMode": "awsvpc",
-  "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::677276093343:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::677276093343:role/ecsTaskExecutionRole",
   "requiresCompatibilities": [
     "FARGATE"
   ],
@@ -11,7 +11,7 @@
   "containerDefinitions": [
     {
       "name": "risksafeai-container",
-      "image": "YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/risksafeai-repo:latest",
+      "image": "677276093343.dkr.ecr.ap-southeast-2.amazonaws.com/risksafeai-repo:latest",
       "essential": true,
       "portMappings": [
         {
@@ -29,26 +29,26 @@
       "secrets": [
         {
           "name": "OPENAI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:risksafeai-secrets:OPENAI_API_KEY::"
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets:OPENAI_API_KEY::"
         },
         {
           "name": "PINECONE_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:risksafeai-secrets:PINECONE_API_KEY::"
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets:PINECONE_API_KEY::"
         },
         {
           "name": "TAVILY_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:risksafeai-secrets:TAVILY_API_KEY::"
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets:TAVILY_API_KEY::"
         },
         {
           "name": "COHERE_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:risksafeai-secrets:COHERE_API_KEY::"
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets:COHERE_API_KEY::"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/risksafeai",
-          "awslogs-region": "us-east-1",
+          "awslogs-region": "ap-southeast-2",
           "awslogs-stream-prefix": "ecs"
         }
       },
