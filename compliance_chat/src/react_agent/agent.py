@@ -192,33 +192,45 @@ Output JSON with this EXACT format:
             safe_print(f"\n   Reasoning: {result['reasoning']}")
             safe_print(f"   Next action: {result['next_action']}")
 
-            # --- GUARDRAIL: FORCE COMPLETENESS CHECK ---
+            # --- GUARDRAIL 1: FORCE COMPLETENESS CHECK BEFORE FINALIZE ---
             next_action_type = result['next_action']
             action_params = result['action_params']
 
-            # Check if trying to finalize without completeness check
-            if next_action_type == "finalize_answer" and not state.completeness_checked:
-                # Heuristic: Is this an obligation query?
-                q_lower = state.query.lower()
-                obligation_keywords = ["must", "obligation", "compliance", "register", "prohibit", "requirement", "list"]
+            # Heuristic: Is this an obligation query?
+            q_lower = state.query.lower()
+            obligation_keywords = ["must", "obligation", "compliance", "register", "prohibit", "requirement", "list"]
+            is_obligation_query = any(kw in q_lower for kw in obligation_keywords)
+
+            # --- GUARDRAIL 2: LAST CHANCE COMPLETENESS CHECK ---
+            # If we are running out of time (steps) and haven't checked completeness yet, FORCE IT NOW.
+            if is_obligation_query and not state.completeness_checked and state.iteration >= (self.max_iterations - 5):
+                safe_print(f"\n[GUARDRAIL] ⏰ Approaching iteration limit ({state.iteration}/{self.max_iterations}). Forcing mandatory 'completeness_check' now.")
                 
-                if any(kw in q_lower for kw in obligation_keywords):
-                    safe_print(f"\n[GUARDRAIL] 🛡️  Intercepted 'finalize_answer'. Forcing 'completeness_check' first.")
+                next_action_type = "completeness_check"
+                # Guess business type
+                business_type = "general_business"
+                if "loan" in q_lower or "lending" in q_lower:
+                    business_type = "fintech personal loans"
+                elif "payment" in q_lower:
+                    business_type = "fintech payments"
                     
-                    next_action_type = "completeness_check"
-                    # Guess business type from query or default
-                    business_type = "general_business"
-                    if "loan" in q_lower or "lending" in q_lower:
-                        business_type = "fintech personal loans"
-                    elif "payment" in q_lower:
-                        business_type = "fintech payments"
-                        
-                    action_params = {
-                        "business_type": business_type
-                    }
+                action_params = {"business_type": business_type}
+                thought.content += " [SYSTEM NOTE: Forced completeness check due to iteration limit proximity.]"
+            
+            # Check if trying to finalize without completeness check
+            elif next_action_type == "finalize_answer" and not state.completeness_checked and is_obligation_query:
+                safe_print(f"\n[GUARDRAIL] 🛡️  Intercepted 'finalize_answer'. Forcing 'completeness_check' first.")
+                
+                next_action_type = "completeness_check"
+                # Guess business type
+                business_type = "general_business"
+                if "loan" in q_lower or "lending" in q_lower:
+                    business_type = "fintech personal loans"
+                elif "payment" in q_lower:
+                    business_type = "fintech payments"
                     
-                    # Update thought to reflect enforcement
-                    thought.content += " [SYSTEM NOTE: Finalize blocked. Completeness check is MANDATORY for this query.]"
+                action_params = {"business_type": business_type}
+                thought.content += " [SYSTEM NOTE: Finalize blocked. Completeness check is MANDATORY for this query.]"
 
             # Record planned action
             action = Action(
