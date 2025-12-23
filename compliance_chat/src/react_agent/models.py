@@ -102,6 +102,7 @@ class CompletenessCheckOutput(BaseModel):
     missing_regulators: List[str]
     expected_obligation_range: tuple[int, int]
     current_obligation_count: int
+    missing_topics: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
 

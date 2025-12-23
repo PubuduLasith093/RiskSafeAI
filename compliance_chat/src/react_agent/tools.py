@@ -393,6 +393,7 @@ class ReactAgentTools:
             missing_regulators=missing,
             expected_obligation_range=expected_range,
             current_obligation_count=input_data.obligation_count,
+            missing_topics=missing_topics,
             warnings=warnings
         )
 
