@@ -242,16 +242,18 @@ class AgentStateDict(TypedDict):
 
 def convert_to_dict_state(state: AgentState) -> dict:
     """Convert Pydantic state to dict for LangGraph"""
+    # OPTIMIZATION: Pass complex objects by reference to avoid OOM
+    # usage during long loops (prevent deep copying huge lists)
     return {
         "query": state.query,
-        "plan": [p.model_dump() for p in state.plan],
+        "plan": [p.model_dump() for p in state.plan], # Plan is small, dump is fine
         "current_step_index": state.current_step_index,
         "audit_feedback": state.audit_feedback,
         "iteration": state.iteration,
-        "thoughts": [t.model_dump() for t in state.thoughts],
-        "actions": [a.model_dump() for a in state.actions],
-        "observations": [o.model_dump() for o in state.observations],
-        "all_chunks": [c.model_dump() for c in state.all_chunks],
+        "thoughts": state.thoughts, # Pass objects directly
+        "actions": state.actions,   # Pass objects directly
+        "observations": state.observations, # Pass objects directly
+        "all_chunks": state.all_chunks,     # Pass objects directly (CRITICAL for memory)
         "regulators_covered": state.regulators_covered,
         "completeness_checked": state.completeness_checked,
         "citations_validated": state.citations_validated,
@@ -267,16 +269,24 @@ def convert_to_dict_state(state: AgentState) -> dict:
 
 def convert_from_dict_state(state_dict: dict) -> AgentState:
     """Convert dict state back to Pydantic"""
+    
+    # helper to handle both Dict and Object
+    def parse_list(items, model_class):
+        if not items: return []
+        if isinstance(items[0], dict):
+            return [model_class(**i) for i in items]
+        return items # Already objects
+
     return AgentState(
         query=state_dict["query"],
-        plan=[PlanItem(**p) for p in state_dict.get("plan", [])],
+        plan=[PlanItem(**p) for p in state_dict.get("plan", [])] if state_dict.get("plan") and isinstance(state_dict["plan"][0], dict) else state_dict.get("plan", []),
         current_step_index=state_dict.get("current_step_index", 0),
         audit_feedback=state_dict.get("audit_feedback", ""),
         iteration=state_dict["iteration"],
-        thoughts=[Thought(**t) for t in state_dict["thoughts"]],
-        actions=[Action(**a) for a in state_dict["actions"]],
-        observations=[Observation(**o) for o in state_dict["observations"]],
-        all_chunks=[Chunk(**c) for c in state_dict["all_chunks"]],
+        thoughts=parse_list(state_dict["thoughts"], Thought),
+        actions=parse_list(state_dict["actions"], Action),
+        observations=parse_list(state_dict["observations"], Observation),
+        all_chunks=parse_list(state_dict["all_chunks"], Chunk),
         regulators_covered=state_dict["regulators_covered"],
         completeness_checked=state_dict["completeness_checked"],
         citations_validated=state_dict["citations_validated"],
