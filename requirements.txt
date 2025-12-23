@@ -14,7 +14,7 @@ langchain-openai==0.2.10
 openai>=1.0.0
 
 # Vector database
-pinecone>=8.0.0
+pinecone>=3.0.0
 langchain-pinecone>=0.1.0
 
 # Web search (Tavily for ReAct agent)
@@ -34,4 +34,4 @@ ipykernel==6.30.0
 langsmith
 # Hybrid search and Reranking
 cohere
-pinecone-text
+pinecone-text>=0.8.0

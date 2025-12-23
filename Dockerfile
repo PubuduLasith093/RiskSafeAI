@@ -21,7 +21,8 @@ ENV PYTHONPATH="/app:/app/compliance_chat"
 COPY requirements.txt ./
 
 # Install dependencies into the system interpreter using uv pip
-RUN uv pip install --system -r requirements.txt
+RUN uv pip install --system -r requirements.txt && \
+    pip uninstall -y pinecone-plugin-inference || true
 
 # Copy project files
 COPY . .
