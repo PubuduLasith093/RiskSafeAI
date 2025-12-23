@@ -532,33 +532,56 @@ Query: {query}
 Context from Australian Regulatory Documents:
 {context}
 
-You are an expert Australian Regulatory Assistant. Provide a final response based on the context provided.
+You are an expert Australian Regulatory Assistant with deep knowledge of financial products and regulatory applicability.
 
-DIRECTIONS:
-   - If the user is asking for "must do" or "must not do" statements, you are in **AUDIT MODE**.
-   - Your goal is to list EVERY EXPLICIT MANDATE found in the provided sources.
+PRODUCT-SPECIFIC INTELLIGENCE:
+   - **CRITICAL**: Carefully analyze the user's query to identify the SPECIFIC PRODUCT TYPE they are asking about (e.g., "home loans", "personal loans", "credit cards", "margin lending").
+   - **RELEVANCE FILTERING**: Only include obligations that are DIRECTLY APPLICABLE to that specific product type.
+   - **IMPLICIT REFERENCES**: Understand that regulations may refer to the product using different terminology:
+     * "Home loans" may appear as: "residential mortgage", "housing credit", "secured lending for property purchase", "home finance"
+     * "Personal loans" may appear as: "unsecured credit", "consumer credit", "small amount credit contracts"
+     * "Credit cards" may appear as: "continuing credit", "revolving credit facility"
+   - **SCOPE DETERMINATION**: Use your expertise to determine if a regulation applies:
+     * Does it mention the product type explicitly or implicitly?
+     * Does it apply to "all credit licensees" or "all credit providers" (then it applies to this product)?
+     * Does it specifically EXCLUDE this product type (then skip it)?
+     * Is it about a completely different product category (then skip it)?
+   - **WHEN IN DOUBT**: If a mandate could reasonably apply to the product type, INCLUDE it. Better to be over-inclusive than miss critical obligations.
+
+AUDIT MODE DIRECTIONS:
+   - Your goal is to list EVERY EXPLICIT MANDATE found in the provided sources that is RELEVANT to the specific product type.
    - You MUST categorize them into two specific, bolded sections:
      1. **SECTION A: MANDATORY ACTIONS (MUST DO)**
      2. **SECTION B: PROHIBITED ACTIONS (MUST NOT DO / DISQUALIFIERS)**
-   - Extract the sentences VERBATIM. 
+   - Extract the sentences VERBATIM (word-for-word from the source).
    - **SECTION B CRITICAL**: This section must include all **DISQUALIFYING CRITERIA**. Even if the sentence does not use the literal words "must not", if it describes a condition that results in a **refusal, cancellation, or ineligibility**, it belongs here.
-   - Specifically hunt for source text regarding: **Convictions, Bankruptcy, Banning Orders, Previous Cancellations, or Honest/Fair failures.**
-   - **IMPORTANT**: Ensure every quote is a **COMPLETE SENTENCE**. If the source text seems cut off, use the surrounding Parent Heading or Text context.
-   - DO NOT summarize. If you find 20 rules, list 20 rules.
+   - Specifically hunt for source text regarding: **Convictions, Bankruptcy, Banning Orders, Previous Cancellations, Honest/Fair failures, Fit and Proper Person requirements.**
+   - **IMPORTANT**: Ensure every quote is a **COMPLETE SENTENCE**. If the source text seems cut off, use the surrounding Parent Heading or Text context to complete it.
+   - DO NOT summarize. If you find 20 relevant rules, list all 20 rules.
+   - DO NOT include obligations that clearly apply to a different product type (e.g., don't include "margin lending" rules if the query is about "personal loans").
 
-2. GROUNDING & CITATION: 
+GROUNDING & CITATION: 
    - Every single bullet point MUST have its specific citation attached to the end of the line in brackets [ ].
    - **CITATIONS MUST USE THE SOURCE ID AND SUB-HEADING PROVIDED.** 
    - The "SOURCE ID" is usually the official ASIC Clause (e.g., RG 209.11). You must prioritize this over generic "Source" numbers.
-   - Example format: "Mandatory text..." [ASIC: RG 1.139, Sub-heading: Purpose]
+   - Example format: "Mandatory text..." [ASIC: RG 209.11, Sub-heading: Licensing Requirements]
    - If you are quoting word-for-word, use "quotation marks."
 
-3. STRUCTURE:
-   - Use a clear "#### Verbatim Regulatory Mandates" section for the "must" and "must not" statements you found.
-   - Use # Headings for other topics.
-   - Use bullet points for additional context.
+STRUCTURE:
+   - Start with a brief intro: "# Compliance Obligations for [Product Type]"
+   - Use a clear "## Verbatim Regulatory Mandates" section
+   - Then show the two subsections: SECTION A and SECTION B
+   - Use bullet points with verbatim quotes and citations
+   - If helpful, add a final "## Additional Context" section for explanatory notes
 
-Focus on being helpful, thorough, and precise while maintaining Australian legal context.
+QUALITY CHECKS BEFORE FINALIZING:
+   1. Have I filtered out obligations that clearly don't apply to this product type?
+   2. Have I included all general obligations that apply to "all credit providers" or "all licensees"?
+   3. Are my citations using the official ASIC clause numbers (e.g., RG 209.11)?
+   4. Are all quotes complete sentences?
+   5. Have I included both "must do" AND "must not do" obligations?
+
+Focus on being helpful, thorough, precise, and PRODUCT-SPECIFIC while maintaining Australian legal context.
 """
 
         try:
@@ -566,7 +589,7 @@ Focus on being helpful, thorough, and precise while maintaining Australian legal
                 model=self.llm_model,
                 messages=[{"role": "user", "content": final_prompt}],
                 temperature=self.temperature,
-                max_tokens=4000
+                max_tokens=16000
             )
 
             answer = response.choices[0].message.content
