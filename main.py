@@ -78,11 +78,14 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
 
+from typing import Any, Dict, Union
+import json
+
 class ObligationRegisterRequest(BaseModel):
     query: str
 
 class ObligationRegisterResponse(BaseModel):
-    answer: str
+    answer: Union[Dict, str]
     metadata: Dict
 
 # --- Routes ---
@@ -104,8 +107,16 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
 
+        # Try to parse the answer as JSON if it's a string (since our agent now returns JSON text)
+        final_answer = result["answer"]
+        if isinstance(final_answer, str):
+            try:
+                final_answer = json.loads(final_answer)
+            except:
+                pass # Keep as string if parsing fails (fallback)
+
         return ObligationRegisterResponse(
-            answer=result["answer"],
+            answer=final_answer,
             metadata=result["metadata"]
         )
 

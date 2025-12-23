@@ -624,12 +624,25 @@ GROUNDING & CITATION:
    - Example format: "Mandatory text..." [ASIC: RG 209.11, Sub-heading: Licensing Requirements]
    - If you are quoting word-for-word, use "quotation marks."
 
-STRUCTURE:
-   - Start with a brief intro: "# Compliance Obligations for [Product Type]"
-   - Use a clear "## Verbatim Regulatory Mandates" section
-   - Then show the two subsections: SECTION A and SECTION B
-   - Use bullet points with verbatim quotes and citations
-   - If helpful, add a final "## Additional Context" section for explanatory notes
+STRUCTURE & OUTPUT FORMAT:
+   - You MUST output a SINGLE valid JSON object. Do not include any markdown formatting (like ```json ... ```) outside of the JSON string.
+   - The JSON structure must normally follow this schema:
+     {
+       "product_type": "Identified Product Type (e.g., 'Home Loans')",
+       "mandatory_actions": [
+         {
+           "text": "Verbatim 'must do' quote...",
+           "citation": "ASIC: RG 209.11, Sub-heading: Purpose"
+         }
+       ],
+       "prohibited_actions": [
+         {
+           "text": "Verbatim 'must not' or disqualifier quote...",
+           "citation": "ASIC: RG 209.15"
+         }
+       ],
+       "additional_context": "Any relevant explanatory notes or summary."
+     }
 
 QUALITY CHECKS BEFORE FINALIZING:
    1. Have I filtered out obligations that clearly don't apply to this product type?
@@ -637,6 +650,7 @@ QUALITY CHECKS BEFORE FINALIZING:
    3. Are my citations using the official ASIC clause numbers (e.g., RG 209.11)?
    4. Are all quotes complete sentences?
    5. Have I included both "must do" AND "must not do" obligations?
+   6. Is the output valid JSON?
 
 Focus on being helpful, thorough, precise, and PRODUCT-SPECIFIC while maintaining Australian legal context.
 """
@@ -645,6 +659,7 @@ Focus on being helpful, thorough, precise, and PRODUCT-SPECIFIC while maintainin
             response = self.openai_client.chat.completions.create(
                 model=self.llm_model,
                 messages=[{"role": "user", "content": final_prompt}],
+                response_format={"type": "json_object"},
                 temperature=self.temperature,
                 max_tokens=16000
             )
