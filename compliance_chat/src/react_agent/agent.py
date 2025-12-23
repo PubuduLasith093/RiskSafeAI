@@ -540,7 +540,7 @@ Output JSON with this EXACT format:
             regulators_covered=valid_regulators,
             obligation_count=len(state.all_chunks)
         )
-        check_result = self.tools.completeness_check_tool(check_input, state.all_chunks)
+        check_result = self.tools.completeness_check_tool(check_input)
 
         state.completeness_checked = True
         
