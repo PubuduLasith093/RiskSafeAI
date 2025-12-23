@@ -520,8 +520,26 @@ Output JSON with this EXACT format:
         business_type = "general_business"
         if "loan" in state.query.lower(): business_type = "fintech personal loans"
         elif "payment" in state.query.lower(): business_type = "fintech payments"
+        elif "sacc" in state.query.lower(): business_type = "sacc_lender"
 
-        check_input = CompletenessCheckInput(business_type=business_type)
+        # Convert state strings to Regulator enums
+        # Filter out any that don't match the Enum values to avoid crashing
+        valid_regulators = []
+        for r in state.regulators_covered:
+            try:
+                valid_regulators.append(Regulator(r))
+            except ValueError:
+                pass # Ignore unknown strings
+        
+        # Default to ASIC if empty
+        if not valid_regulators:
+            valid_regulators = [Regulator.ASIC]
+
+        check_input = CompletenessCheckInput(
+            business_type=business_type,
+            regulators_covered=valid_regulators,
+            obligation_count=len(state.all_chunks)
+        )
         check_result = self.tools.completeness_check_tool(check_input, state.all_chunks)
 
         state.completeness_checked = True
