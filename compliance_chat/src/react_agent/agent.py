@@ -150,6 +150,12 @@ DECISION RULES:
   2. Run completeness_check to verify all key topics are covered
   3. If completeness_check shows missing topics, do additional searches for those topics
   4. Only then run finalize_answer
+
+STATE CHECK:
+- Before calling 'finalize_answer', look at your previous actions.
+- If Mode 2 (Obligation Query): Did you run 'completeness_check'?
+  - NO -> You MUST run 'completeness_check' now. Do NOT finalize.
+  - YES -> Proceed to finalize if coverage is good.
 - ALWAYS cite your answers using [Document, Section].
 - YOUR PRIORITY IS ACCURACY AND COMPLETENESS FROM ASIC SOURCES.
 
