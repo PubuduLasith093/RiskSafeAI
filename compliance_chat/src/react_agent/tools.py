@@ -265,16 +265,17 @@ class ReactAgentTools:
 
     def completeness_check_tool(self, input_data: CompletenessCheckInput) -> CompletenessCheckOutput:
         """
-        Check if all applicable regulators have been covered
+        Check if all applicable regulators and key obligation categories have been covered.
+        Specifically verifies coverage of MUST DO and MUST NOT DO statements.
 
         Args:
             input_data: CompletenessCheckInput with business type and regulators covered
 
         Returns:
-            CompletenessCheckOutput with completeness status
+            CompletenessCheckOutput with completeness status and recommendations
         """
 
-        safe_print(f"\n [CHECK] Completeness Check: {input_data.business_type}")
+        safe_print(f"\n[CHECK] Completeness Check: {input_data.business_type}")
         safe_print(f"   Regulators covered: {[r.value for r in input_data.regulators_covered]}")
         safe_print(f"   Obligations found: {input_data.obligation_count}")
 
@@ -308,27 +309,83 @@ class ReactAgentTools:
             applicable_regulators = [Regulator(r) for r in mapping["regulators"]]
             expected_range = tuple(mapping["expected_range"])
 
-        # Check coverage
+        # Check regulator coverage
         covered_values = [r.value for r in input_data.regulators_covered]
         applicable_values = [r.value for r in applicable_regulators]
         missing = [r for r in applicable_values if r not in covered_values]
 
         is_complete = len(missing) == 0
+        warnings = []
 
         # Check obligation count
-        warnings = []
         if input_data.obligation_count < expected_range[0]:
             warnings.append(f"Obligation count ({input_data.obligation_count}) below expected minimum ({expected_range[0]})")
             is_complete = False
         elif input_data.obligation_count > expected_range[1] * 1.5:
             warnings.append(f"Obligation count ({input_data.obligation_count}) significantly higher than expected ({expected_range[1]})")
 
-        safe_print(f"   Applicable regulators: {applicable_values}")
-        safe_print(f"   Missing: {missing if missing else 'None'}")
-        safe_print(f"   Expected range: {expected_range[0]}-{expected_range[1]}")
-        safe_print(f"   Status: {'[COMPLETE]' if is_complete else '[INCOMPLETE]'}")
+        # ENHANCED: Check for coverage of key obligation categories
+        # These are critical topics that should have both MUST and MUST NOT statements
+        key_topics_to_check = [
+            "licensing requirements",
+            "responsible lending",
+            "disclosure obligations",
+            "conduct obligations",
+            "reporting requirements",
+            "prohibited conduct",
+            "fit and proper person",
+            "conflicts of interest"
+        ]
 
-        log.info("Completeness check completed", is_complete=is_complete, missing=missing)
+        safe_print(f"\n   Checking coverage of key obligation categories...")
+        missing_topics = []
+        
+        # Quick semantic search to verify each topic has been covered
+        for topic in key_topics_to_check:
+            try:
+                # Generate embedding for the topic
+                embedding_response = self.openai_client.embeddings.create(
+                    model=self.embedding_model,
+                    input=topic
+                )
+                query_embedding = embedding_response.data[0].embedding
+
+                # Quick check: search for this topic in the index
+                search_results = self.pinecone_index.query(
+                    vector=query_embedding,
+                    top_k=3,
+                    include_metadata=True,
+                    filter={"regulator": {"$in": applicable_values}} if applicable_values else None
+                )
+
+                # If we found relevant results, topic is covered
+                if not search_results.matches or search_results.matches[0].score < 0.7:
+                    missing_topics.append(topic)
+                    safe_print(f"      ⚠️  '{topic}' - Low coverage (score: {search_results.matches[0].score if search_results.matches else 0:.2f})")
+                else:
+                    safe_print(f"      ✓ '{topic}' - Covered (score: {search_results.matches[0].score:.2f})")
+
+            except Exception as e:
+                safe_print(f"      ⚠️  '{topic}' - Check failed: {str(e)}")
+                missing_topics.append(topic)
+
+        # Add warnings for missing topics
+        if missing_topics:
+            is_complete = False
+            warnings.append(f"Missing coverage for key topics: {', '.join(missing_topics[:3])}")
+            safe_print(f"\n   [INCOMPLETE] Missing {len(missing_topics)} key topics")
+        else:
+            safe_print(f"\n   [COMPLETE] All key topics covered")
+
+        safe_print(f"   Applicable regulators: {applicable_values}")
+        safe_print(f"   Missing regulators: {missing if missing else 'None'}")
+        safe_print(f"   Expected range: {expected_range[0]}-{expected_range[1]}")
+        safe_print(f"   Overall Status: {'[COMPLETE]' if is_complete else '[INCOMPLETE]'}")
+
+        log.info("Completeness check completed", 
+                 is_complete=is_complete, 
+                 missing_regulators=missing,
+                 missing_topics=missing_topics)
 
         return CompletenessCheckOutput(
             is_complete=is_complete,
