@@ -21,6 +21,7 @@ from compliance_chat.src.react_agent.models import (
     Observation,
     ActionType,
     Regulator,
+    PlanItem,
     convert_to_dict_state,
     convert_from_dict_state,
 )
@@ -53,6 +54,70 @@ class ReactAgent:
         log.info("ReactAgent initialized", max_iterations=self.max_iterations)
 
     # ============================================
+    # Planner Step
+    # ============================================
+
+    def plan_step(self, state: AgentState) -> AgentState:
+        """
+        Planner Agent: Generates a checklist of research tasks
+        """
+        safe_print(f"\n{'='*80}")
+        safe_print(f"PLANNING PHASE")
+        safe_print(f"{'='*80}")
+
+        planning_prompt = f"""
+        User Query: "{state.query}"
+
+        You are an Expert Compliance Planner for Australian Financial Services.
+        Your goal is to break down this request into a logical series of RESEARCH TASKS.
+        
+        RULES:
+        1. Create granular tasks (e.g., "Search for Responsible Lending mandates", "Search for Advertising prohibitions").
+        2. Ensure you cover ALL relevant areas (Licensing, Conduct, Reporting, Dispute Resolution, Design & Distribution).
+        3. Prioritize "Must Do" and "Must Not Do" obligations.
+        
+        Output a JSON object with this EXACT structure:
+        {{
+            "plan": [
+                {{
+                    "id": 1, 
+                    "task": "Search for [specific topic] obligations in RG [number]...", 
+                    "topic_keywords": ["keyword1", "keyword2"]
+                }},
+                ...
+            ]
+        }}
+        """
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=self.llm_model,
+                messages=[{"role": "user", "content": planning_prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.1  # Low temperature for structured planning
+            )
+
+            result = json.loads(response.choices[0].message.content)
+            
+            # Populate state.plan
+            state.plan = [PlanItem(**item) for item in result.get("plan", [])]
+            state.current_step_index = 0
+            
+            safe_print(f"\n[PLANNER] Generated {len(state.plan)} tasks:")
+            for item in state.plan:
+                safe_print(f"   {item.id}. {item.task}")
+
+        except Exception as e:
+            log.error("Planning step failed", error=str(e))
+            state.errors.append(f"Planning failed: {str(e)}")
+            # Fallback plan
+            state.plan = [
+                PlanItem(id=1, task=f"Search general obligations for {state.query}", topic_keywords=["obligations"])
+            ]
+
+        return state
+
+    # ============================================
     # ReAct Loop Functions
     # ============================================
 
@@ -61,8 +126,21 @@ class ReactAgent:
         if state.final_answer:
             return "finish"
         
+        # If we just finished validation and it failed (feedback exists), continue to fix it
+        if state.audit_feedback and state.audit_feedback != "APPROVED":
+            return "continue"
+
+        # If plan is done (and not yet validated), go to Validate
+        # We check if we have executed enough steps to match the plan plan
+        rag_count = sum(1 for a in state.actions if a.action_type == ActionType.RAG_SEARCH)
+        if state.plan and rag_count >= len(state.plan) and not state.audit_feedback:
+             return "validate"
+        
         if state.iteration >= self.max_iterations:
             safe_print(f"\n[WARNING] Iteration limit ({self.max_iterations}) reached.")
+            # If we haven't validated yet, try one last validation attempt
+            if not state.audit_feedback:
+                return "validate"
             return "finish"
             
         return "continue"
@@ -79,9 +157,29 @@ class ReactAgent:
         safe_print(f"ITERATION {state.iteration}")
         safe_print(f"{'='*80}")
 
+        # AUTO-ADVANCE PLAN
+        # Heuristic: Each RAG_SEARCH action counts as completing one plan step (or attempt)
+        rag_count = sum(1 for a in state.actions if a.action_type == ActionType.RAG_SEARCH)
+        if state.plan:
+            state.current_step_index = min(rag_count, len(state.plan) - 1)
+
         # Build context from previous observations
+        
+        # Build Plan Status
+        plan_str = "CURRENT EXECUTION PLAN (Folow this!):\n"
+        if state.plan:
+            for i, item in enumerate(state.plan):
+                status = " [PENDING]"
+                if i < state.current_step_index: status = " [COMPLETED]"
+                elif i == state.current_step_index: status = " [CURRENT FOCUS]"
+                plan_str += f"{item.id}. {item.task} {status}\n"
+        else:
+            plan_str = "(No plan generated - falling back to ad-hoc ReAct)\n"
+
         context = f"""
 Query: {state.query}
+
+{plan_str}
 
 Current Status:
 - Iteration: {state.iteration}/{self.max_iterations}
@@ -106,22 +204,18 @@ Previous thoughts:
         thinking_prompt = f"""
 {context}
 
-IMPORTANT: You are an expert AUSTRALIAN regulatory assistant.
-You have two modes based on the user's query:
+IMPORTANT: You are an expert AUSTRALIAN regulatory assistant working as a PLAN EXECUTOR.
+Your goal is to execute the [CURRENT FOCUS] task in the plan above.
 
-MODE 1: SIMPLE FACTUAL QUERY
-- Use this for basic questions (e.g., "What is RG 209?", "What is a PDS?")
-- Action: 1-2 searches, then finalize_answer
-- Goal: Quick, cited answer to a specific question
-- Completeness check: NOT REQUIRED
+MODE 1: SIMPLE FACTUAL QUERY (No Plan)
+- If plan is empty, do 1-2 searches then finalize.
 
-MODE 2: OBLIGATION/PROHIBITION QUERY (COMPLIANCE-CRITICAL)
-- Use this when the user asks for "must do", "must not do", obligations, prohibitions, or requirements
-- Action: Multiple deep searches (3-5+), completeness_check, then finalize_answer
-- IMPORTANT: If the user wants 'Must Do' statements, vary your searches across different topics like 'Responsible Lending', 'Conduct', and 'Reporting' to find ALL verbatim mandates.
-- CRITICAL: You MUST also perform specific searches for "PROHIBITIONS" using keywords like "prohibited", "must not", "not eligible", "offence", and "conviction" to ensure you find all Section B mandates.
-- Completeness check: MANDATORY - Run before finalize_answer to verify all key topics covered
-- Goal: Comprehensive, verified list of every mandatory obligation and prohibition
+MODE 2: PLAN EXECUTION (Compliance Register)
+- Look at the "CURRENT EXECUTION PLAN" above.
+- Your PRIORITY is to finish the [CURRENT FOCUS] task.
+- Use 'rag_search' to execute the task.
+- Once you perform a search, the system will mark the task as COMPLETED and move to the next one.
+- When all tasks are [COMPLETED], you MUST run 'completeness_check' then 'finalize_answer'.
 
 Available AUSTRALIAN Regulator:
 - ASIC (Australian Securities and Investments Commission) - Primary source
@@ -407,13 +501,63 @@ Output JSON with this EXACT format:
         return state
 
     # ============================================
-    # LangGraph Workflow
+    # Validator Step (The Auditor)
     # ============================================
+
+    def validate_step(self, state: AgentState) -> AgentState:
+        """
+        Validator Agent: Checks if the plan was executed correctly and coverage is sufficient.
+        """
+        safe_print(f"\n{'='*80}")
+        safe_print(f"VALIDATION PHASE")
+        safe_print(f"{'='*80}")
+
+        # 1. Force Completeness Check (if valid mode)
+        # We reuse the tool logic but invoke it directly
+        from compliance_chat.src.react_agent.models import CompletenessCheckInput
+        
+        # Guess business type again or use from plan
+        business_type = "general_business"
+        if "loan" in state.query.lower(): business_type = "fintech personal loans"
+        elif "payment" in state.query.lower(): business_type = "fintech payments"
+
+        check_input = CompletenessCheckInput(business_type=business_type)
+        check_result = self.tools.completeness_check_tool(check_input, state.all_chunks)
+
+        state.completeness_checked = True
+        
+        # 2. Decision Logic
+        if check_result.missing_topics:
+            safe_print(f"\n[AUDITOR] ❌ REJECTED. Missing topics: {check_result.missing_topics}")
+            state.audit_feedback = f"Validation failed. Missing coverage for: {check_result.missing_topics}. You MUST search for these immediately."
+            
+            # Add a correction task to the plan logic
+            # We don't append to state.plan necessarily, but the 'audit_feedback' will guide the Executor
+            # But to be robust, let's append a specialized task
+            correction_task = PlanItem(
+                id=len(state.plan) + 1,
+                task=f"ADDRESS AUDIT FEEDBACK: Search for {check_result.missing_topics}",
+                topic_keywords=check_result.missing_topics,
+                status="pending"
+            )
+            state.plan.append(correction_task)
+            # Do NOT reset step index, just let it continue to this new step
+            
+        else:
+            safe_print(f"\n[AUDITOR] ✅ APPROVED. Coverage is sufficient.")
+            state.audit_feedback = "APPROVED"
+
+        return state
 
     def _build_workflow(self):
         """Build LangGraph workflow for ReAct agent"""
 
         # Wrapper functions for LangGraph (work with dict state)
+        def plan_step_wrapper(state: dict) -> dict:
+             pydantic_state = convert_from_dict_state(state)
+             result_state = self.plan_step(pydantic_state)
+             return convert_to_dict_state(result_state)
+
         def think_step_wrapper(state: dict) -> dict:
             pydantic_state = convert_from_dict_state(state)
             result_state = self.think_step(pydantic_state)
@@ -424,6 +568,11 @@ Output JSON with this EXACT format:
             result_state = self.act_step(pydantic_state)
             return convert_to_dict_state(result_state)
 
+        def validate_step_wrapper(state: dict) -> dict:
+            pydantic_state = convert_from_dict_state(state)
+            result_state = self.validate_step(pydantic_state)
+            return convert_to_dict_state(result_state)
+
         def should_continue_wrapper(state: dict) -> str:
             pydantic_state = convert_from_dict_state(state)
             return self.should_continue(pydantic_state)
@@ -432,13 +581,16 @@ Output JSON with this EXACT format:
         workflow = StateGraph(AgentStateDict)
 
         # Add nodes
+        workflow.add_node("plan", plan_step_wrapper)
         workflow.add_node("think", think_step_wrapper)
         workflow.add_node("act", act_step_wrapper)
+        workflow.add_node("validate", validate_step_wrapper)
 
         # Set entry point
-        workflow.set_entry_point("think")
+        workflow.set_entry_point("plan")
 
         # Add edges
+        workflow.add_edge("plan", "think")
         workflow.add_edge("think", "act")
 
         # Conditional edge from act
@@ -447,9 +599,13 @@ Output JSON with this EXACT format:
             should_continue_wrapper,
             {
                 "continue": "think",
+                "validate": "validate",
                 "finish": END
             }
         )
+
+        # Validate always goes back to think (to either finalize or fix)
+        workflow.add_edge("validate", "think")
 
         # Compile
         compiled_agent = workflow.compile()

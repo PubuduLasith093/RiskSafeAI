@@ -158,11 +158,25 @@ class Observation(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
 
 
+class PlanItem(BaseModel):
+    """Item in the execution plan"""
+    id: int
+    task: str  # e.g. "Search for Responsible Lending obligations"
+    topic_keywords: List[str]
+    status: str = "pending"  # pending, in_progress, completed, failed
+    result_summary: str = ""
+
+
 class AgentState(BaseModel):
-    """Complete state of ReAct agent"""
+    """Complete state of ReAct/Planner agent"""
 
     # Input
     query: str
+    
+    # Planner State
+    plan: List[PlanItem] = Field(default_factory=list)
+    current_step_index: int = 0
+    audit_feedback: str = ""
 
     # ReAct loop tracking
     iteration: int = 0
@@ -205,6 +219,9 @@ from typing import TypedDict
 class AgentStateDict(TypedDict):
     """Agent state as TypedDict for LangGraph"""
     query: str
+    plan: List[dict]
+    current_step_index: int
+    audit_feedback: str
     iteration: int
     thoughts: List[dict]
     actions: List[dict]
@@ -226,6 +243,9 @@ def convert_to_dict_state(state: AgentState) -> dict:
     """Convert Pydantic state to dict for LangGraph"""
     return {
         "query": state.query,
+        "plan": [p.model_dump() for p in state.plan],
+        "current_step_index": state.current_step_index,
+        "audit_feedback": state.audit_feedback,
         "iteration": state.iteration,
         "thoughts": [t.model_dump() for t in state.thoughts],
         "actions": [a.model_dump() for a in state.actions],
@@ -248,6 +268,9 @@ def convert_from_dict_state(state_dict: dict) -> AgentState:
     """Convert dict state back to Pydantic"""
     return AgentState(
         query=state_dict["query"],
+        plan=[PlanItem(**p) for p in state_dict.get("plan", [])],
+        current_step_index=state_dict.get("current_step_index", 0),
+        audit_feedback=state_dict.get("audit_feedback", ""),
         iteration=state_dict["iteration"],
         thoughts=[Thought(**t) for t in state_dict["thoughts"]],
         actions=[Action(**a) for a in state_dict["actions"]],
