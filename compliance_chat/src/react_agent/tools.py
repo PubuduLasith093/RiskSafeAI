@@ -627,22 +627,22 @@ GROUNDING & CITATION:
 STRUCTURE & OUTPUT FORMAT:
    - You MUST output a SINGLE valid JSON object. Do not include any markdown formatting (like ```json ... ```) outside of the JSON string.
    - The JSON structure must normally follow this schema:
-     {
+     {{
        "product_type": "Identified Product Type (e.g., 'Home Loans')",
        "mandatory_actions": [
-         {
+         {{
            "text": "Verbatim 'must do' quote...",
            "citation": "ASIC: RG 209.11, Sub-heading: Purpose"
-         }
+         }}
        ],
        "prohibited_actions": [
-         {
+         {{
            "text": "Verbatim 'must not' or disqualifier quote...",
            "citation": "ASIC: RG 209.15"
-         }
+         }}
        ],
        "additional_context": "Any relevant explanatory notes or summary."
-     }
+     }}
 
 QUALITY CHECKS BEFORE FINALIZING:
    1. Have I filtered out obligations that clearly don't apply to this product type?
