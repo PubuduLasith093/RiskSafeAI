@@ -38,7 +38,7 @@ class ReactAgent:
         self.tools = ReactAgentTools()
 
         # Load config values
-        self.max_iterations = self.config["react_agent"]["max_iterations"]
+        self.max_iterations = 30 # self.config["react_agent"]["max_iterations"]
         self.llm_model = self.config["llm"]["openai"]["model_name"]
         self.temperature = self.config["llm"]["openai"]["temperature"]
 
@@ -659,7 +659,7 @@ Output JSON with this EXACT format:
         # Run workflow
         try:
             # Increase recursion limit to handle more iterations
-            final_state_dict = self.agent.invoke(initial_dict, config={"recursion_limit": 150})
+            final_state_dict = self.agent.invoke(initial_dict, config={"recursion_limit": 80})
             final_state = convert_from_dict_state(final_state_dict)
 
             # SAFETY CHECK: If limit reached but no final_answer generated in loop
