@@ -659,7 +659,7 @@ Output JSON with this EXACT format:
         # Run workflow
         try:
             # Increase recursion limit to handle more iterations
-            final_state_dict = self.agent.invoke(initial_dict, config={"recursion_limit": 100})
+            final_state_dict = self.agent.invoke(initial_dict, config={"recursion_limit": 150})
             final_state = convert_from_dict_state(final_state_dict)
 
             # SAFETY CHECK: If limit reached but no final_answer generated in loop
