@@ -28,8 +28,20 @@
       ],
       "secrets": [
         {
-          "name": "apikeyliveclass",
-          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets-ZcsoHt"
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets-ZcsoHt:OPENAI_API_KEY::"
+        },
+        {
+          "name": "PINECONE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets-ZcsoHt:PINECONE_API_KEY::"
+        },
+        {
+          "name": "TAVILY_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets-ZcsoHt:TAVILY_API_KEY::"
+        },
+        {
+          "name": "COHERE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:677276093343:secret:risksafeai-secrets-ZcsoHt:COHERE_API_KEY::"
         }
       ],
       "logConfiguration": {
