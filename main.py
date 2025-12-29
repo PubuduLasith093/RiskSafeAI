@@ -152,10 +152,9 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
         orchestrator = ObligationRegisterOrchestrator()
         result_dict = orchestrator.generate_obligation_register(query)
         
-        # Format output to Markdown
+        # Format output to Markdown for UI
         markdown_answer = format_obligations_to_markdown(result_dict)
         
-        # We ignore extra metadata in the final response as requested
         return ObligationRegisterResponse(
             answer=markdown_answer,
             metadata={"source": "risk_safe_ai_orchestrator"}
@@ -163,11 +162,33 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
 
     except Exception as e:
         error_trace = traceback.format_exc()
-        print(error_trace) # Print to console
+        print(error_trace)
         raise HTTPException(
             status_code=500, 
             detail=f"ERROR: {str(e)}"
         )
+
+@app.post("/api/obligations")
+async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
+    """Dedicated API endpoint returning raw JSON obligations list"""
+    query = req.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    try:
+        orchestrator = ObligationRegisterOrchestrator()
+        result = orchestrator.generate_obligation_register(query)
+        
+        # Return only the obligations list as requested
+        return {
+            "product_type": result.get("product_type"),
+            "count": len(result.get("obligations", [])),
+            "obligations": result.get("obligations", [])
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
