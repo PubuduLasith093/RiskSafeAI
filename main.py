@@ -2,8 +2,9 @@ import os
 import sys
 import io
 import traceback
+import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any, Union
 
 # --- GLOBAL WINDOWS FIX FOR [Errno 22] ---
 def patch_windows_console():
@@ -16,7 +17,6 @@ def patch_windows_console():
                     self.original_stream.write(data)
                 except OSError as e:
                     if e.errno == 22:
-                        # Try to encode as ASCII if UTF-8 fails
                         try:
                             clean_data = data.encode('ascii', 'ignore').decode('ascii')
                             self.original_stream.write(clean_data)
@@ -32,30 +32,28 @@ def patch_windows_console():
             def __getattr__(self, name):
                 return getattr(self.original_stream, name)
         
-        # Wrap the buffer in UTF-8 first, then our SafeStream
         try:
             sys.stdout = SafeStream(io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace'))
             sys.stderr = SafeStream(io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace'))
         except:
-            # Fallback if wrapping fails
             sys.stdout = SafeStream(sys.stdout)
             sys.stderr = SafeStream(sys.stderr)
 
 patch_windows_console()
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
-from compliance_chat.src.react_agent.agent import ReactAgent
-from compliance_chat.exception.custom_exception import DocumentPortalException
+# --- Import New Modular App ---
+# Ensure root is in path if needed (it is by default when running python main.py)
+from compliance_chat.app.main import ObligationRegisterOrchestrator
 from compliance_chat.logger import GLOBAL_LOGGER as log
 
 app = FastAPI(title="RiskSafeAI Compliance Assistant")
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,15 +76,65 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
 
-from typing import Any, Dict, Union
-import json
-
 class ObligationRegisterRequest(BaseModel):
     query: str
 
 class ObligationRegisterResponse(BaseModel):
-    answer: Union[Dict, str]
+    answer: str  # Returning Markdown string to UI
     metadata: Dict
+
+# --- Helper to Format Markdown ---
+def format_obligations_to_markdown(result: Dict) -> str:
+    """Format the obligations list into a nice Markdown string for the UI."""
+    obligations = result.get("obligations", [])
+    product_type = result.get("product_type", "Unknown")
+    
+    md_lines = []
+    md_lines.append(f"# Obligation Register: {product_type}")
+    md_lines.append(f"**Total Obligations:** {len(obligations)}\n")
+    
+    if not obligations:
+        md_lines.append("No obligations found.")
+        return "\n".join(md_lines)
+
+    # Summary Table
+    md_lines.append("## Summary Table")
+    md_lines.append("| Obligation | Priority | Type | Source |")
+    md_lines.append("|---|---|---|---|")
+    for obl in obligations:
+        name = obl.get("obligation_name", "N/A")
+        prio = obl.get("priority", "medium")
+        otyp = obl.get("type", "must_do")
+        doc = f"{obl.get('document_name', '')} {obl.get('document_subsection', '')}"
+        md_lines.append(f"| {name} | {prio} | {otyp} | {doc} |")
+    
+    md_lines.append("\n## Detailed Obligations")
+    
+    for i, obl in enumerate(obligations, 1):
+        name = obl.get("obligation_name", "N/A")
+        desc = obl.get("description", "No description")
+        conf = obl.get("confidence_score", 0.0)
+        reg = obl.get("regulator", "N/A")
+        doc_name = obl.get("document_name", "N/A")
+        sub = obl.get("document_subsection", "")
+        
+        md_lines.append(f"### {i}. {name}")
+        md_lines.append(f"- **Regulator:** {reg}")
+        md_lines.append(f"- **Source:** {doc_name} {sub}")
+        md_lines.append(f"- **Description:** {desc}")
+        md_lines.append(f"- **Priority:** {obl.get('priority', 'medium').upper()}")
+        md_lines.append(f"- **Type:** {obl.get('type', 'must_do').replace('_', ' ').title()}")
+        md_lines.append(f"- **Confidence:** {conf:.2f}")
+        
+        rels = obl.get("relates_to", [])
+        if rels:
+            md_lines.append("- **Related To:**")
+            for r in rels:
+                md_lines.append(f"  - {r.get('related_obligation')} ({r.get('related_document')})")
+        
+        md_lines.append("")
+
+    return "\n".join(md_lines)
 
 # --- Routes ---
 @app.get("/", response_class=HTMLResponse)
@@ -100,40 +148,28 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        # Initialize ReAct agent
-        agent = ReactAgent()
-        result = agent.run(query)
-
-        if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-
-        # Try to parse the answer as JSON if it's a string (since our agent now returns JSON text)
-        final_answer = result["answer"]
-        if isinstance(final_answer, str):
-            try:
-                final_answer = json.loads(final_answer)
-            except:
-                pass # Keep as string if parsing fails (fallback)
-
+        # Initialize Orchestrator
+        orchestrator = ObligationRegisterOrchestrator()
+        result_dict = orchestrator.generate_obligation_register(query)
+        
+        # Format output to Markdown
+        markdown_answer = format_obligations_to_markdown(result_dict)
+        
+        # We ignore extra metadata in the final response as requested
         return ObligationRegisterResponse(
-            answer=final_answer,
-            metadata=result["metadata"]
+            answer=markdown_answer,
+            metadata={"source": "risk_safe_ai_orchestrator"}
         )
 
-    except DocumentPortalException as e:
-        error_trace = traceback.format_exc()
-        log.error("DocumentPortalException in endpoint", error=str(e), traceback=error_trace)
-        raise HTTPException(status_code=500, detail=f"Compliance Error: {str(e)}")
     except Exception as e:
         error_trace = traceback.format_exc()
-        log.error(f"Error in endpoint: {e}", traceback=error_trace)
-        # We return a very clean error message plus traceback
+        print(error_trace) # Print to console
         raise HTTPException(
             status_code=500, 
-            detail=f"ERROR: {str(e)}\n\nCheck terminal for full traceback or see below:\n{error_trace}"
+            detail=f"ERROR: {str(e)}"
         )
 
 if __name__ == "__main__":
     import uvicorn
-    # Set reload=False to see if it's a reloader issue
+    # Make sure to run from root: python main.py
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)

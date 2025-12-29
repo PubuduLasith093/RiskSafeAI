@@ -16,7 +16,7 @@ except ImportError:
     sys.exit(1)
 
 def run_test():
-    query = "Generate a comprehensive obligation register for a Fintech company offering Small Amount Credit Contracts (SACC) in Australia. Include all responsible lending, prohibited fees, and conduct obligations."
+    query = "Extract all statements using the standard keyword set (must, shall, prohibited, penalties, etc.) for Australian Financial Services Licensees (AFSL). Return every single relevant statement."
     
     print(f"Initializing Agent...")
     try:

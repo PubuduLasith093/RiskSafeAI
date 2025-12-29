@@ -3,7 +3,7 @@ embedding_model:
   model_name: "text-embedding-3-large"
 
 pinecone:
-  index_name: "asic-compliance-rag"  # Aligned with compliance_project
+  index_name: "asic-compliance-rag-new"  # Aligned with compliance_project
   environment: "us-east-1"
   dimension: 3072  # Matches OpenAI text-embedding-3-large
   metric: "dotproduct"  # Aligned with compliance_project

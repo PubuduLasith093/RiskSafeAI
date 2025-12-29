@@ -19,6 +19,7 @@ langchain-pinecone>=0.1.0
 
 # Web search (Tavily for ReAct agent)
 tavily-python>=0.3.0
+duckduckgo-search>=6.0.0
 
 # Document processing
 docx2txt==0.9

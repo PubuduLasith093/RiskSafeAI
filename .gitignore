@@ -38,3 +38,7 @@ dist/
 build/
 compliance_chat.egg-info/
 flow.excalidraw
+chunking/
+chunking
+extraction_result.json
+research
