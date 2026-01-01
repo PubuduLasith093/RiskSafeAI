@@ -36,3 +36,6 @@ langsmith
 # Hybrid search and Reranking
 cohere
 pinecone-text>=0.8.0
+
+scikit-learn
+numpy

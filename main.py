@@ -48,10 +48,27 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-# --- Import New Modular App ---
-# Ensure root is in path if needed (it is by default when running python main.py)
-from compliance_chat.app.main import ObligationRegisterOrchestrator
-from compliance_chat.logger import GLOBAL_LOGGER as log
+# --- Import New Research Module ---
+# Ensure root is in path
+if str(Path.cwd()) not in sys.path:
+    sys.path.append(str(Path.cwd()))
+
+try:
+    # Importing from the new location specified by user
+    # from compliance_chat.research.modules.supervisor import run_supervisor
+    from compliance_chat.app.orchestrator import EnterpriseComplianceOrchestrator
+    from compliance_chat.logger import GLOBAL_LOGGER as log
+except ImportError as e:
+    print(f"Import Error: {e}")
+    # Fallback to local path if package is not installed as root
+    sys.path.append(str(Path.cwd() / "compliance_chat" / "app"))
+    try:
+        from orchestrator import EnterpriseComplianceOrchestrator
+    except ImportError:
+        pass
+
+# Initialize the orchestrator globally to reuse resources
+orchestrator = EnterpriseComplianceOrchestrator()
 
 app = FastAPI(title="RiskSafeAI Compliance Assistant")
 
@@ -84,54 +101,122 @@ class ObligationRegisterResponse(BaseModel):
     metadata: Dict
 
 # --- Helper to Format Markdown ---
+# --- Helper to Format Markdown ---
 def format_obligations_to_markdown(result: Dict) -> str:
     """Format the obligations list into a nice Markdown string for the UI."""
-    obligations = result.get("obligations", [])
-    product_type = result.get("product_type", "Unknown")
+    # New Enterprise System Output Format
+    final_obligations = result.get("final_obligations", [])
+    
+    # Check if this is the old format or new format
+    if not final_obligations and "obligations" in result:
+        # Fallback for old format if somehow used
+        return format_old_obligations(result)
+        
+    obligations = final_obligations
     
     md_lines = []
-    md_lines.append(f"# Obligation Register: {product_type}")
+    md_lines.append(f"# Enterprise Compliance Report")
     md_lines.append(f"**Total Obligations:** {len(obligations)}\n")
     
+    # Review Packages Warning
+    reviews = result.get("review_packages", [])
+    if reviews:
+        md_lines.append(f"::: warning\n**ATTENTION:** {len(reviews)} obligations require human review.\n:::\n")
+    
     if not obligations:
-        md_lines.append("No obligations found.")
+        md_lines.append("No obligations found for this query.")
         return "\n".join(md_lines)
 
     # Summary Table
-    md_lines.append("## Summary Table")
-    md_lines.append("| Obligation | Priority | Type | Source |")
+    md_lines.append("## Executive Summary")
+    md_lines.append("| ID | Obligation | Confidence | Source |")
     md_lines.append("|---|---|---|---|")
     for obl in obligations:
-        name = obl.get("obligation_name", "N/A")
-        prio = obl.get("priority", "medium")
-        otyp = obl.get("type", "must_do")
-        doc = f"{obl.get('document_name', '')} {obl.get('document_subsection', '')}"
-        md_lines.append(f"| {name} | {prio} | {otyp} | {doc} |")
+        # Pydantic model dump or dict access
+        if hasattr(obl, "model_dump"):
+            o = obl.model_dump()
+        else:
+            o = obl
+            
+        oid = o.get("obligation_id", "N/A")
+        stmt = o.get("obligation_statement", "")[:50] + "..."
+        conf = o.get("confidence_level", "LOW")
+        source = o.get("source_grounding", {})
+        ref = f"{source.get('legal_instrument', '')} {source.get('section_clause', '')}"
+        
+        md_lines.append(f"| {oid} | {stmt} | {conf} | {ref} |")
     
     md_lines.append("\n## Detailed Obligations")
     
     for i, obl in enumerate(obligations, 1):
-        name = obl.get("obligation_name", "N/A")
-        desc = obl.get("description", "No description")
-        conf = obl.get("confidence_score", 0.0)
-        reg = obl.get("regulator", "N/A")
-        doc_name = obl.get("document_name", "N/A")
-        sub = obl.get("document_subsection", "")
+        if hasattr(obl, "model_dump"):
+            o = obl.model_dump()
+        else:
+            o = obl
+            
+        oid = o.get("obligation_id", "N/A")
+        stmt = o.get("obligation_statement", "N/A")
+        conf_score = o.get("confidence_score", 0.0)
+        conf_level = o.get("confidence_level", "LOW")
         
-        md_lines.append(f"### {i}. {name}")
-        md_lines.append(f"- **Regulator:** {reg}")
-        md_lines.append(f"- **Source:** {doc_name} {sub}")
-        md_lines.append(f"- **Description:** {desc}")
-        md_lines.append(f"- **Priority:** {obl.get('priority', 'medium').upper()}")
-        md_lines.append(f"- **Type:** {obl.get('type', 'must_do').replace('_', ' ').title()}")
+        source = o.get("source_grounding", {})
+        regulator = source.get("regulator", "N/A")
+        instrument = source.get("legal_instrument", "N/A")
+        section = source.get("section_clause", "")
+        excerpt = source.get("verbatim_excerpt", "")
+        
+        struct = o.get("structure", {})
+        action = struct.get("action", "")
+        trigger = struct.get("trigger", "")
+        
+        applicability = o.get("applicability_rules", "N/A")
+
+        md_lines.append(f"### {i}. {oid}: {stmt}")
+        md_lines.append(f"- **Confidence:** {conf_level} ({conf_score:.2f})")
+        md_lines.append(f"- **Source:** {regulator} - {instrument} {section}")
+        md_lines.append(f"> *\"{excerpt}\"*")
+        md_lines.append(f"- **Action:** {action}")
+        md_lines.append(f"- **Trigger:** {trigger}")
+        md_lines.append(f"- **Applicability:** {applicability}")
+        md_lines.append("")
+
+    return "\n".join(md_lines)
+
+def format_old_obligations(result: Dict) -> str:
+    """Legacy formatter"""
+    obligations = result.get("obligations", [])
+    md_lines = ["# Obligation Register (Legacy)"]
+    for obl in obligations:
+        md_lines.append(f"- {obl.get('obligation_name', 'Obligation')}")
+    return "\n".join(md_lines)
+
+def format_statements_to_markdown(result: Dict) -> str:
+    """Format statement extractor results to Markdown."""
+    statements = result.get("statements", [])
+    doc_name = result.get("document_name", "Unknown")
+    
+    md_lines = []
+    md_lines.append(f"# Statement Extraction: {doc_name}")
+    md_lines.append(f"**Total Statements:** {len(statements)}\n")
+    
+    if not statements:
+        md_lines.append("No statements found matching criteria.")
+        return "\n".join(md_lines)
+
+    md_lines.append("## Extracted Statements")
+    
+    for i, stmt in enumerate(statements, 1):
+        text = stmt.get("statement_text", "")
+        kw = stmt.get("keyword", "")
+        sect = stmt.get("section", "")
+        stype = stmt.get("statement_type", "")
+        conf = stmt.get("confidence", 0.0)
+        
+        md_lines.append(f"### {i}. {sect}")
+        md_lines.append(f"> \"{text}\"")
+        md_lines.append(f"- **Type:** {stype}")
+        md_lines.append(f"- **Keyword Match:** {kw}")
         md_lines.append(f"- **Confidence:** {conf:.2f}")
-        
-        rels = obl.get("relates_to", [])
-        if rels:
-            md_lines.append("- **Related To:**")
-            for r in rels:
-                md_lines.append(f"  - {r.get('related_obligation')} ({r.get('related_document')})")
-        
         md_lines.append("")
 
     return "\n".join(md_lines)
@@ -148,16 +233,17 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        # Initialize Orchestrator
-        orchestrator = ObligationRegisterOrchestrator()
-        result_dict = orchestrator.generate_obligation_register(query)
+        # Calls Enterprise System
+        # result_dict = run_supervisor(query)
+        result_dict = orchestrator.run_enterprise_compliance_system(query)
         
-        # Format output to Markdown for UI
+        # Format for UI
         markdown_answer = format_obligations_to_markdown(result_dict)
+        source = "enterprise_system"
         
         return ObligationRegisterResponse(
             answer=markdown_answer,
-            metadata={"source": "risk_safe_ai_orchestrator"}
+            metadata={"source": source, "execution_meta": result_dict.get("metadata")}
         )
 
     except Exception as e:
@@ -176,15 +262,19 @@ async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        orchestrator = ObligationRegisterOrchestrator()
-        result = orchestrator.generate_obligation_register(query)
+        result_dict = orchestrator.run_enterprise_compliance_system(query)
         
-        # Return only the obligations list as requested
-        return {
-            "product_type": result.get("product_type"),
-            "count": len(result.get("obligations", [])),
-            "obligations": result.get("obligations", [])
-        }
+        # Return clean JSON dict
+        # Ensure Pydantic models are serialized
+        # The Orchestrator returns objects which might prevent simple dict return
+        # But FastAPI handles Pydantic serialization usually if response model is generic Dict?
+        # Let's manual dump if needed. EnterpriseObligation is Pydantic.
+        
+        # Just return the result_dict. FastAPI's JSONResponse encoder usually handles dicts with primitives.
+        # But if list contains Pydantic models, we might need jsonable_encoder.
+        # However, result_dict has "final_obligations" which is List[EnterpriseObligation].
+        
+        return result_dict
 
     except Exception as e:
         traceback.print_exc()

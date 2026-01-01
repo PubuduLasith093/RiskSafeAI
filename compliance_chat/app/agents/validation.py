@@ -1,70 +1,105 @@
-from ..models import AgentState
 
-# Cell 12: Agent 8 - Semantic Validator (UPDATED)
+from typing import List, Literal
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
 
-def semantic_validator_agent(state: AgentState) -> AgentState:
-    """
-    Agent 8: Validate obligations (UPDATED for new format)
-    
-    Simplified version: Check field quality and confidence
-    """
+from ..config import llm_gpt4o
+from ..models import ComplianceState, ConfidenceLevel, CertaintyLevel
+
+# ============================================================================
+# AGENT 15: Safety Validator
+# ============================================================================
+
+final_safety_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a final safety validator and human review packager.
+
+SAFETY CHECKS (ALL must pass):
+1. ✓ Grounding complete 2. ✓ No legal advice 3. ✓ Confidence appropriate
+4. ✓ No PII 5. ✓ Applicability clear 6. ✓ No contradictions 7. ✓ Conservative bias
+
+HUMAN REVIEW TRIGGERS:
+- Confidence < 0.90 → MUST REVIEW
+- Contradictions detected → MUST REVIEW
+- Novel/unusual → SHOULD REVIEW
+- High-impact → SHOULD REVIEW
+
+Output safety validation and review packages."""),
+    ("user", """OBLIGATIONS TO VALIDATE (sample):
+{obligations_sample}
+
+TRUST FLAGS:
+{trust_flags}
+
+Perform final safety checks and create review packages.""")
+])
+
+class FinalSafetyValidation(BaseModel):
+    all_checks_passed: bool
+    failed_checks: List[str]
+    review_required_count: int
+    high_priority_reviews: List[str]
+    medium_priority_reviews: List[str]
+    action: Literal["APPROVE", "REVIEW_REQUIRED", "BLOCK"]
+
+final_safety_chain = final_safety_prompt | llm_gpt4o.with_structured_output(FinalSafetyValidation)
+
+def safety_validator_and_packager(state: ComplianceState) -> ComplianceState:
+    """Agent 15: Final safety validation and human review preparation"""
     print("\n" + "="*80)
-    print("AGENT 8: SEMANTIC VALIDATION")
+    print("AGENT 15: SAFETY VALIDATOR & HUMAN REVIEW PACKAGER")
     print("="*80)
-
-    obligations = state["obligations"]
     
-    if not obligations:
-        print("No obligations to validate")
-        state["validation_results"] = []
-        return state
+    canonical_obligations = state["canonical_obligations"]
+    trust_flags = state.get("trust_flags", [])
     
-    validation_results = []
-
-    for obl in obligations[:20]:  # Validate first 20 to save costs
-        # Validation checks
-        has_document = bool(obl.document_name and len(obl.document_name) > 2)
-        has_subsection = bool(obl.document_subsection and len(obl.document_subsection) > 2)
-        has_name = bool(obl.obligation_name and len(obl.obligation_name) > 5)
-        high_confidence = obl.confidence_score >= 0.70
-        
-        is_valid = has_document and has_subsection and has_name and high_confidence
-        
-        issues = []
-        if not has_document:
-            issues.append("Missing or incomplete document_name")
-        if not has_subsection:
-            issues.append("Missing or incomplete document_subsection")
-        if not has_name:
-            issues.append("Missing or incomplete obligation_name")
-        if not high_confidence:
-            issues.append(f"Low confidence score: {obl.confidence_score}")
-        
-        # Create validation result (using NEW ValidationResult model)
-        validation_results.append({
-            "obligation_id": obl.obligation_name[:50],  # Use name as ID
-            "is_valid": is_valid,
-            "confidence": obl.confidence_score,
-            "accuracy_score": 0.85 if is_valid else 0.60,
-            "completeness_score": 1.0 if (has_document and has_subsection and has_name) else 0.70,
-            "hallucination_detected": False,
-            "citation_correct": has_document and has_subsection,
-            "issues": issues,
-            "recommendation": "APPROVE" if is_valid else "REVISE",
-            "suggested_revision": None
+    # Sample
+    obligations_sample = "\n\n".join([
+        f"[{i+1}] {obl.obligation_statement} (Conf: {obl.confidence_score:.2f})"
+        for i, obl in enumerate(canonical_obligations[:10])
+    ])
+    
+    try:
+        safety_check = final_safety_chain.invoke({
+            "obligations_sample": obligations_sample,
+            "trust_flags": str(trust_flags)
         })
-
-    state["validation_results"] = validation_results
-
-    valid_count = sum(1 for v in validation_results if v["is_valid"])
-    print(f"✓ Validated {len(validation_results)} obligations")
-    print(f"  Valid: {valid_count}/{len(validation_results)}")
-    
-    if valid_count < len(validation_results):
-        print(f"  Issues found: {len(validation_results) - valid_count}")
-        # Show first few issues
-        for v in validation_results[:3]:
-            if not v["is_valid"]:
-                print(f"    - {v['obligation_id'][:40]}: {', '.join(v['issues'])}")
-
-    return state
+        
+        print(f"\n[FINAL SAFETY CHECK] Action: {safety_check.action}")
+        
+        # Package reviews
+        review_packages = []
+        for obl in canonical_obligations:
+            needs_review = (
+                obl.confidence_score < 0.90 or
+                obl.confidence_level in [ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW] or
+                not obl.trust_validation.grounding_validated
+            )
+            
+            if needs_review:
+                package = {
+                    "obligation_id": obl.obligation_id,
+                    "reason": [],
+                    "suggested_action": "REVIEW"
+                }
+                if obl.confidence_score < 0.90: package["reason"].append(f"Low confidence {obl.confidence_score:.2f}")
+                review_packages.append(package)
+        
+        state["review_packages"] = review_packages
+        
+        if safety_check.action == "BLOCK":
+            state["should_continue"] = False
+            state["errors"].append("BLOCKED: Final safety checks failed")
+            state["final_output"] = []
+        else:
+            state["final_output"] = canonical_obligations
+            
+        print(f"  Approved: {len(state['final_output'])}")
+        print(f"  Review Pkgs: {len(review_packages)}")
+        
+        return state
+        
+    except Exception as e:
+        print(f"ERROR: {e}")
+        state["errors"].append(f"Final safety check failed: {str(e)}")
+        state["final_output"] = canonical_obligations
+        return state
