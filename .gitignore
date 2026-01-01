@@ -17,7 +17,7 @@ venv/
 .idea/
 
 # Vector DB artifacts (not needed with Pinecone cloud)
-*.pkl
+# *.pkl (Commented out to allow bm25_encoder.pkl)
 
 # Data & archive
 data/
