@@ -149,14 +149,10 @@ def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
     chunks_to_process = list(enumerate(chunks[:50], 1))
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(process_chunk, item): item for item in chunks_to_process}
-        
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                all_detected.extend(result)
-            except Exception as e:
-                print(f"    Thread error: {e}")
+        # Use map to preserve order
+        chunk_results = list(executor.map(process_chunk, chunks_to_process))
+        for res in chunk_results:
+             all_detected.extend(res)
     
     print(f"\n[DETECTION COMPLETE]")
     print(f"  Total obligations detected: {len(all_detected)}")
@@ -282,17 +278,10 @@ def atomic_extractor_and_scorer(state: ComplianceState) -> ComplianceState:
     obls_to_process = list(enumerate(detected_obligations[:100], 1))
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Use map to preserve order if possible, or list of futures
-        # We need to assign IDs later so order consistency is nice but not strictly critical
-        # Using futures + as_completed is simpler for progress
-        futures = {executor.submit(process_obligation, item): item for item in obls_to_process}
-        
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                res = future.result()
-                final_obligations.extend(res)
-            except Exception as e:
-                print(f"    Thread error: {e}")
+        # Use map to preserve order
+        detected_results = list(executor.map(process_obligation, obls_to_process))
+        for res in detected_results:
+             final_obligations.extend(res)
 
     # Assign IDs
     for i, obl in enumerate(final_obligations, 1):
