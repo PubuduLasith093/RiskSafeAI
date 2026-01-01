@@ -1,12 +1,39 @@
 import os
 import pickle
 from pathlib import Path
+import nltk
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pinecone import Pinecone
 from tavily import TavilyClient
 import cohere
 from openai import OpenAI
+
+# Ensure NLTK data is available (especially for Lambda/Cloud)
+# punkt_tab is required for newer NLTK/BM25
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    print("Downloading nltk: punkt_tab")
+    try:
+        # Try default locations first
+        nltk.download('punkt_tab')
+    except Exception:
+        # Fallback to /tmp for Lambda/Read-only filesystems
+        print("Downloading nltk: punkt_tab to /tmp")
+        nltk.download('punkt_tab', download_dir='/tmp')
+        nltk.data.path.append('/tmp')
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    print("Downloading nltk: punkt")
+    try:
+        nltk.download('punkt')
+    except Exception:
+        print("Downloading nltk: punkt to /tmp")
+        nltk.download('punkt', download_dir='/tmp')
+        nltk.data.path.append('/tmp')
 
 # Load environment variables
 # Assuming .env is in project root (RiskSafeAI)
