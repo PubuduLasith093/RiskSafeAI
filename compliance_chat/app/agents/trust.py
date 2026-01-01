@@ -148,3 +148,79 @@ def privacy_security_scanner(state: ComplianceState) -> ComplianceState:
         print(f"ERROR: {e}")
         state["errors"].append(f"Privacy scan failed: {str(e)}")
         return state
+
+# ============================================================================
+# PARALLEL TRUST LAYER AGGREGATOR
+# ============================================================================
+
+from concurrent.futures import ThreadPoolExecutor
+
+def run_trust_checks_parallel(state: ComplianceState) -> ComplianceState:
+    """
+    Runs trust layer agents (6, 7, 8) in PARALLEL using threading
+    This reduces latency from ~3 LLM calls sequential to ~1 LLM call time
+    """
+    print("\n" + "="*80)
+    print("PHASE 3: PARALLEL TRUST LAYER EXECUTION")
+    print("="*80)
+
+    # Create thread pool for parallel execution
+    with ThreadPoolExecutor(max_workers=3) as executor:
+
+        # Submit all three trust checks simultaneously
+        future_posture = executor.submit(regulatory_posture_enforcer, state.copy())
+        future_privacy = executor.submit(privacy_security_scanner, state.copy())
+        future_grounding = executor.submit(grounding_validator_agent, state.copy())
+
+        print("\n  [PARALLEL] Running 3 trust checks in parallel...")
+
+        # Wait for all to complete
+        state_posture = future_posture.result()
+        state_privacy = future_privacy.result()
+        state_grounding = future_grounding.result()
+
+    print("  OK All trust checks complete\n")
+
+    # Aggregate results - merge trust flags and errors
+    all_trust_flags = (
+        state_posture.get("trust_flags", []) +
+        state_privacy.get("trust_flags", []) +
+        state_grounding.get("trust_flags", [])
+    )
+
+    all_errors = (
+        state_posture.get("errors", []) +
+        state_privacy.get("errors", []) +
+        state_grounding.get("errors", [])
+    )
+
+    # Check if any agent blocked execution
+    should_continue = (
+        state_posture.get("should_continue", True) and
+        state_privacy.get("should_continue", True) and
+        state_grounding.get("should_continue", True)
+    )
+
+    # Aggregate trust check status
+    trust_check_passed = (
+        state_posture.get("trust_check_passed", True) and
+        state_privacy.get("trust_check_passed", True) and
+        state_grounding.get("trust_check_passed", True)
+    )
+
+    # Update original state with aggregated results
+    state["trust_flags"] = list(set(all_trust_flags))  # Deduplicate
+    state["errors"].extend(all_errors)
+    state["should_continue"] = should_continue
+    state["trust_check_passed"] = trust_check_passed
+
+    print(f"[AGGREGATED TRUST RESULTS]")
+    status = "PASS" if trust_check_passed else "FAIL"
+    print(f"  Trust checks passed: {status}")
+    print(f"  Should continue: {should_continue}")
+    print(f"  Total trust flags: {len(state['trust_flags'])}")
+
+    if not should_continue:
+        print(f"  WARNING: BLOCKED by trust layer")
+
+    return state

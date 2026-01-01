@@ -108,19 +108,24 @@ obligation_detection_chain = obligation_detection_prompt | llm_gpt4o.with_struct
 import concurrent.futures
 
 def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
-    """Agent 9: Detects obligations in chunks using Chain-of-Thought"""
+    """Agent 9: Detects obligations in chunks using Chain-of-Thought with batch parallelization"""
     print("\n" + "="*80)
-    print("AGENT 9: OBLIGATION DETECTION (Chain-of-Thought)")
+    print("AGENT 9: OBLIGATION DETECTION (Chain-of-Thought + Batch Parallel)")
     print("="*80)
-    
+
     chunks = state["chunks"]
     query_context = state["query_context"]
     all_detected = []
-    
-    print(f"\nProcessing {len(chunks)} chunks... (Parallel Execution)")
-    
-    def process_chunk(arg):
-        idx, chunk = arg
+
+    print(f"\nProcessing {len(chunks)} chunks...")
+
+    # Process chunks in PARALLEL batches for better performance
+    BATCH_SIZE = 10
+    chunks_limited = chunks[:50]  # Limit to top 50 for performance
+    batches = [chunks_limited[i:i+BATCH_SIZE] for i in range(0, len(chunks_limited), BATCH_SIZE)]
+
+    def process_chunk(chunk):
+        """Process single chunk - called in parallel"""
         try:
             detection = obligation_detection_chain.invoke({
                 "chunk_text": chunk.text[:4000],
@@ -130,33 +135,34 @@ def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
                 "product_type": query_context.product_type,
                 "license_class": query_context.license_class_required
             })
-            
-            results = []
-            for obl in detection.obligations:
-                results.append({
+
+            return [
+                {
                     "chunk_id": chunk.id,
                     "chunk_metadata": chunk.metadata,
                     "detected": obl
-                })
-            return results
+                }
+                for obl in detection.obligations
+            ]
         except Exception as e:
-            if idx <= 3:
-                print(f"    ERROR processing chunk {idx}: {e}")
             return []
 
-    # Parallel processing
-    # Limit to top 50
-    chunks_to_process = list(enumerate(chunks[:50], 1))
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Use map to preserve order
-        chunk_results = list(executor.map(process_chunk, chunks_to_process))
-        for res in chunk_results:
-             all_detected.extend(res)
-    
+    # Process batches in parallel
+    from concurrent.futures import ThreadPoolExecutor
+
+    for batch_idx, batch in enumerate(batches, 1):
+        print(f"  Batch {batch_idx}/{len(batches)}: Processing {len(batch)} chunks in parallel...")
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            batch_results = list(executor.map(process_chunk, batch))
+
+        # Flatten results
+        for chunk_results in batch_results:
+            all_detected.extend(chunk_results)
+
     print(f"\n[DETECTION COMPLETE]")
     print(f"  Total obligations detected: {len(all_detected)}")
-    
+
     state["_detected_obligations"] = all_detected
     return state
 

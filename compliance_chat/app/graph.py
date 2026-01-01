@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, END
 from .models import ComplianceState
 from .agents.planning import query_understanding_agent, planning_agent, regulatory_scope_validator
 from .agents.retrieval import query_expansion_agent, hybrid_rag_agent
-from .agents.trust import regulatory_posture_enforcer, privacy_security_scanner, grounding_validator_agent
+from .agents.trust import run_trust_checks_parallel
 from .agents.extraction import obligation_detection_agent, atomic_extractor_and_scorer
 from .agents.normalization import normalization_agents
 from .agents.applicability import applicability_analyzer
@@ -24,10 +24,8 @@ def build_enterprise_compliance_workflow() -> StateGraph:
     workflow.add_node("query_expansion", query_expansion_agent)
     workflow.add_node("hybrid_rag", hybrid_rag_agent)
     
-    # Phase 3
-    workflow.add_node("posture_enforcer", regulatory_posture_enforcer)
-    workflow.add_node("privacy_scanner", privacy_security_scanner)
-    workflow.add_node("grounding_validator_placeholder", grounding_validator_agent)
+    # Phase 3: PARALLEL execution of trust checks
+    workflow.add_node("trust_layer_parallel", run_trust_checks_parallel)
     
     # Phase 4
     workflow.add_node("obligation_detection", obligation_detection_agent)
@@ -50,17 +48,15 @@ def build_enterprise_compliance_workflow() -> StateGraph:
     workflow.add_edge("scope_validation", "query_expansion")
     workflow.add_edge("query_expansion", "hybrid_rag")
     
-    workflow.add_edge("hybrid_rag", "posture_enforcer")
-    workflow.add_edge("posture_enforcer", "privacy_scanner")
-    workflow.add_edge("privacy_scanner", "grounding_validator_placeholder")
-    
+    workflow.add_edge("hybrid_rag", "trust_layer_parallel")
+
     def check_should_continue(state: ComplianceState) -> str:
         if not state.get("should_continue", True):
             return "END"
         return "continue"
-    
+
     workflow.add_conditional_edges(
-        "grounding_validator_placeholder",
+        "trust_layer_parallel",
         check_should_continue,
         {
             "continue": "obligation_detection",

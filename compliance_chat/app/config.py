@@ -75,6 +75,6 @@ bm25_encoder = None
 if bm25_path.exists():
     with open(bm25_path, "rb") as f:
         bm25_encoder = pickle.load(f)
-    print("✓ BM25 encoder loaded")
+    print("OK - BM25 encoder loaded")
 else:
     print(f"Warning: BM25 encoder not found at {bm25_path}")
