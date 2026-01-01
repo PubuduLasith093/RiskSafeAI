@@ -55,6 +55,8 @@ class ApplicabilityAnalysis(BaseModel):
 
 applicability_chain = applicability_prompt | llm_gpt4o.with_structured_output(ApplicabilityAnalysis)
 
+import concurrent.futures
+
 def applicability_analyzer(state: ComplianceState) -> ComplianceState:
     """Agent 14: Analyzes applicability for each obligation with Chain-of-Thought"""
     print("\n" + "="*80)
@@ -65,13 +67,10 @@ def applicability_analyzer(state: ComplianceState) -> ComplianceState:
     query_context = state["query_context"]
     updated_obligations = []
     
-    print(f"\nAnalyzing applicability for {len(canonical_obligations)} obligations...")
+    print(f"\nAnalyzing applicability for {len(canonical_obligations)} obligations... (Parallel Execution)")
     
-    # Process batch (limit 50)
-    for idx, obl in enumerate(canonical_obligations[:50], 1):
-        if idx % 10 == 0:
-            print(f"  Progress: {idx}...")
-        
+    def process_obl(arg):
+        idx, obl = arg
         try:
             analysis = applicability_chain.invoke({
                 "obligation_statement": obl.obligation_statement,
@@ -87,12 +86,19 @@ def applicability_analyzer(state: ComplianceState) -> ComplianceState:
             obl.applicability_rules = analysis.applicability_rules
             obl.evidence_expectations = analysis.evidence_expectations
             obl.plain_english_explanation = analysis.plain_english_explanation
-            
-            updated_obligations.append(obl)
+            return obl
             
         except Exception as e:
             if idx <= 3: print(f"    ERROR analyzing obligation {idx}: {e}")
-            updated_obligations.append(obl)
+            return obl # Return original on error
+
+    # Process batch (limit 50)
+    items = list(enumerate(canonical_obligations[:50], 1))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Map preserves order
+        results = list(executor.map(process_obl, items))
+        updated_obligations.extend(results)
             
     if len(canonical_obligations) > 50:
         updated_obligations.extend(canonical_obligations[50:])

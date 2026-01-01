@@ -99,6 +99,8 @@ class CanonicalSynthesis(BaseModel):
 
 canonical_synthesis_chain = canonical_synthesis_prompt | llm_gpt4o.with_structured_output(CanonicalSynthesis)
 
+import concurrent.futures
+
 def normalization_agents(state: ComplianceState) -> ComplianceState:
     """Agents 12 & 13: Cluster similar obligations and create canonical versions"""
     print("\n" + "="*80)
@@ -118,10 +120,12 @@ def normalization_agents(state: ComplianceState) -> ComplianceState:
     
     canonical_obligations = []
     
-    for cluster_idx, cluster in enumerate(clusters, 1):
+    print(f"Synthesizing clusters... (Parallel Execution)")
+    
+    def process_cluster(arg):
+        cluster_idx, cluster = arg
         if len(cluster) == 1:
-            canonical_obligations.append(obligations[cluster[0]])
-            continue
+            return [obligations[cluster[0]]]
         
         # Merge logic
         cluster_obls = [obligations[i] for i in cluster]
@@ -131,6 +135,7 @@ def normalization_agents(state: ComplianceState) -> ComplianceState:
             for i, obl in enumerate(cluster_obls)
         ])
         
+        results = []
         try:
             synthesis = canonical_synthesis_chain.invoke({
                 "obligations_text": obligations_text[:4000]
@@ -156,19 +161,32 @@ def normalization_agents(state: ComplianceState) -> ComplianceState:
                     source_obligation_ids=[o.obligation_id for o in cluster_obls],
                     strictest_standard=synthesis.strictest_standard
                 )
-                canonical_obligations.append(canonical)
-                if cluster_idx <= 3:  # Show first 3 merges
+                results.append(canonical)
+                if cluster_idx <= 3:
+                     # Note: this print might interleave in parallel, but acceptable
                     print(f"\n  Cluster {cluster_idx}: Merged {len(cluster_obls)} obligations")
                     print(f"    Canonical: {synthesis.canonical_statement[:80]}...")
-            
             else:
-                # Don't merge - keep separate
-                canonical_obligations.extend(cluster_obls)
+                results.extend(cluster_obls)
                 print(f"\n  Cluster {cluster_idx}: NOT merged (safety check failed)")
-        
+                
         except Exception as e:
             print(f"  ERROR synthesizing cluster {cluster_idx}: {e}")
-            canonical_obligations.extend(cluster_obls)
+            results.extend(cluster_obls)
+            
+        return results
+
+    # Parallel processing
+    items = list(enumerate(clusters, 1))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Use map to preserve order so CANONICAL IDs match cluster order roughly?
+        # Actually CANONICAL ID is generated inside process_cluster using cluster_idx.
+        # So independent.
+        # But we want 'canonical_obligations' list to be deterministic.
+        results = list(executor.map(process_cluster, items))
+        for res in results:
+            canonical_obligations.extend(res)
             
     print(f"\n[NORMALIZATION COMPLETE]")
     print(f"  Original obligations: {len(obligations)}")

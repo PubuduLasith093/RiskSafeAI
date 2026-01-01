@@ -105,6 +105,8 @@ Detect ALL obligations using step-by-step reasoning.""")
 
 obligation_detection_chain = obligation_detection_prompt | llm_gpt4o.with_structured_output(ObligationDetection)
 
+import concurrent.futures
+
 def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
     """Agent 9: Detects obligations in chunks using Chain-of-Thought"""
     print("\n" + "="*80)
@@ -115,10 +117,10 @@ def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
     query_context = state["query_context"]
     all_detected = []
     
-    print(f"\nProcessing {len(chunks)} chunks...")
+    print(f"\nProcessing {len(chunks)} chunks... (Parallel Execution)")
     
-    # Process chunks (batch for performance - limit to 50)
-    for idx, chunk in enumerate(chunks[:50], 1):
+    def process_chunk(arg):
+        idx, chunk = arg
         try:
             detection = obligation_detection_chain.invoke({
                 "chunk_text": chunk.text[:4000],
@@ -129,23 +131,39 @@ def obligation_detection_agent(state: ComplianceState) -> ComplianceState:
                 "license_class": query_context.license_class_required
             })
             
+            results = []
             for obl in detection.obligations:
-                all_detected.append({
+                results.append({
                     "chunk_id": chunk.id,
                     "chunk_metadata": chunk.metadata,
                     "detected": obl
                 })
-        
+            return results
         except Exception as e:
             if idx <= 3:
                 print(f"    ERROR processing chunk {idx}: {e}")
-            continue
+            return []
+
+    # Parallel processing
+    # Limit to top 50
+    chunks_to_process = list(enumerate(chunks[:50], 1))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(process_chunk, item): item for item in chunks_to_process}
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()
+                all_detected.extend(result)
+            except Exception as e:
+                print(f"    Thread error: {e}")
     
     print(f"\n[DETECTION COMPLETE]")
     print(f"  Total obligations detected: {len(all_detected)}")
     
     state["_detected_obligations"] = all_detected
     return state
+
 
 # ============================================================================
 # AGENT 10 & 11: Atomic Extraction & Scoring
@@ -199,11 +217,15 @@ def atomic_extractor_and_scorer(state: ComplianceState) -> ComplianceState:
     chunks = {chunk.id: chunk for chunk in state["chunks"]}
     final_obligations = []
     
-    for idx, det_obl in enumerate(detected_obligations[:100], 1): # Limit 100
+    print(f"\nProcessing {len(detected_obligations)} detected obligations... (Parallel Execution)")
+    
+    def process_obligation(arg):
+        idx, det_obl = arg
         chunk = chunks.get(det_obl["chunk_id"])
-        if not chunk: continue
+        if not chunk: return []
         
-        detected = det_obl["detected"] # This is Pydantic model DetectedObligation
+        detected = det_obl["detected"]
+        results = []
         
         try:
             # Atomic
@@ -226,9 +248,9 @@ def atomic_extractor_and_scorer(state: ComplianceState) -> ComplianceState:
                     "obligation_type": atomic_obl.obligation_type
                 })
                 
-                # Create EnterpriseObligation
+                # Create EnterpriseObligation (Partial, ID to be assigned later)
                 enterprise_obl = EnterpriseObligation(
-                    obligation_id=f"OBL-{len(final_obligations)+1:04d}",
+                    obligation_id="TEMP", # Placeholder
                     obligation_statement=atomic_obl.obligation_statement,
                     source_grounding=atomic_obl.source_grounding,
                     structure=atomic_obl.structure,
@@ -249,11 +271,32 @@ def atomic_extractor_and_scorer(state: ComplianceState) -> ComplianceState:
                         action="CONTINUE"
                     )
                 )
-                final_obligations.append(enterprise_obl)
+                results.append(enterprise_obl)
+            return results
                 
         except Exception as e:
             if idx <= 3: print(f"    ERROR: {e}")
-            continue
+            return []
+
+    # Parallel processing limit 100
+    obls_to_process = list(enumerate(detected_obligations[:100], 1))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Use map to preserve order if possible, or list of futures
+        # We need to assign IDs later so order consistency is nice but not strictly critical
+        # Using futures + as_completed is simpler for progress
+        futures = {executor.submit(process_obligation, item): item for item in obls_to_process}
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                res = future.result()
+                final_obligations.extend(res)
+            except Exception as e:
+                print(f"    Thread error: {e}")
+
+    # Assign IDs
+    for i, obl in enumerate(final_obligations, 1):
+        obl.obligation_id = f"OBL-{i:04d}"
 
     print(f"\n[EXTRACTION COMPLETE] Total: {len(final_obligations)}")
     state["obligations"] = final_obligations
