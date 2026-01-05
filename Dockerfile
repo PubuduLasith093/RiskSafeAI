@@ -36,4 +36,5 @@ EXPOSE 8000
 
 # Run FastAPI with Gunicorn + uvicorn workers for concurrent request handling
 # 2 workers allows health checks to be served while long requests process
-CMD ["gunicorn", "main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--timeout", "300", "--keep-alive", "300"]
+# Timeout set to 600s (10 min) for complex compliance workflows that take 3-5 minutes
+CMD ["gunicorn", "main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--timeout", "600", "--keep-alive", "300", "--graceful-timeout", "600"]
