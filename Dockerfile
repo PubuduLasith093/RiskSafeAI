@@ -24,6 +24,9 @@ COPY requirements.txt ./
 RUN uv pip install --system -r requirements.txt && \
     pip uninstall -y pinecone-plugin-inference || true
 
+# Pre-download NLTK data to avoid runtime downloads
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt punkt_tab
+
 # Copy project files
 COPY . .
 

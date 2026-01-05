@@ -68,7 +68,15 @@ except ImportError as e:
         pass
 
 # Initialize the orchestrator globally to reuse resources
-orchestrator = EnterpriseComplianceOrchestrator()
+try:
+    print("Initializing EnterpriseComplianceOrchestrator...")
+    orchestrator = EnterpriseComplianceOrchestrator()
+    print("✓ Orchestrator initialized successfully")
+except Exception as e:
+    print(f"✗ CRITICAL: Failed to initialize orchestrator: {e}")
+    traceback.print_exc()
+    # Create a dummy orchestrator that will return errors
+    orchestrator = None
 
 app = FastAPI(title="RiskSafeAI Compliance Assistant")
 
@@ -228,6 +236,9 @@ async def read_root(request: Request):
 
 @app.post("/react/obligation_register", response_model=ObligationRegisterResponse)
 async def generate_obligation_register(req: ObligationRegisterRequest) -> ObligationRegisterResponse:
+    if orchestrator is None:
+        raise HTTPException(status_code=503, detail="Service initialization failed. Check logs.")
+
     query = req.query.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -257,6 +268,9 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
 @app.post("/api/obligations")
 async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
     """Dedicated API endpoint returning raw JSON obligations list"""
+    if orchestrator is None:
+        raise HTTPException(status_code=503, detail="Service initialization failed. Check logs.")
+
     query = req.query.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -282,5 +296,13 @@ async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
 
 if __name__ == "__main__":
     import uvicorn
+    print("="*80)
+    print("STARTING RISKSAFEAI APPLICATION")
+    print("="*80)
+    print(f"Python version: {sys.version}")
+    print(f"Working directory: {Path.cwd()}")
+    print(f"OPENAI_API_KEY present: {bool(os.getenv('OPENAI_API_KEY'))}")
+    print(f"PINECONE_API_KEY present: {bool(os.getenv('PINECONE_API_KEY'))}")
+    print("="*80)
     # Make sure to run from root: python main.py
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
