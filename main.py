@@ -49,6 +49,8 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.concurrency import run_in_threadpool
+
 # --- Import New Research Module ---
 # Ensure root is in path
 if str(Path.cwd()) not in sys.path:
@@ -109,7 +111,6 @@ class ObligationRegisterResponse(BaseModel):
     answer: str  # Returning Markdown string to UI
     metadata: Dict
 
-# --- Helper to Format Markdown ---
 # --- Helper to Format Markdown ---
 def format_obligations_to_markdown(result: Dict) -> str:
     """Format the obligations list into a nice Markdown string for the UI."""
@@ -245,9 +246,9 @@ async def generate_obligation_register(req: ObligationRegisterRequest) -> Obliga
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        # Calls Enterprise System
+        # Calls Enterprise System (using threadpool to avoid blocking main loop)
         # result_dict = run_supervisor(query)
-        result_dict = orchestrator.run_enterprise_compliance_system(query)
+        result_dict = await run_in_threadpool(orchestrator.run_enterprise_compliance_system, query)
         
         # Format for UI
         markdown_answer = format_obligations_to_markdown(result_dict)
@@ -277,7 +278,8 @@ async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        result_dict = orchestrator.run_enterprise_compliance_system(query)
+        # Use threadpool for blocking operation
+        result_dict = await run_in_threadpool(orchestrator.run_enterprise_compliance_system, query)
 
         # Use jsonable_encoder to ensure all Pydantic models are properly serialized
         # This handles nested models, enums, dates, etc.
