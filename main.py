@@ -42,9 +42,10 @@ def patch_windows_console():
 patch_windows_console()
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -277,18 +278,12 @@ async def get_raw_obligations(req: ObligationRegisterRequest) -> Dict:
 
     try:
         result_dict = orchestrator.run_enterprise_compliance_system(query)
-        
-        # Return clean JSON dict
-        # Ensure Pydantic models are serialized
-        # The Orchestrator returns objects which might prevent simple dict return
-        # But FastAPI handles Pydantic serialization usually if response model is generic Dict?
-        # Let's manual dump if needed. EnterpriseObligation is Pydantic.
-        
-        # Just return the result_dict. FastAPI's JSONResponse encoder usually handles dicts with primitives.
-        # But if list contains Pydantic models, we might need jsonable_encoder.
-        # However, result_dict has "final_obligations" which is List[EnterpriseObligation].
-        
-        return result_dict
+
+        # Use jsonable_encoder to ensure all Pydantic models are properly serialized
+        # This handles nested models, enums, dates, etc.
+        json_compatible_data = jsonable_encoder(result_dict)
+
+        return JSONResponse(content=json_compatible_data)
 
     except Exception as e:
         traceback.print_exc()
