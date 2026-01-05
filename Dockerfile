@@ -34,5 +34,5 @@ COPY . .
 # Expose port (aligned with main.py)
 EXPOSE 8000
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI with uvicorn with increased timeouts for long-running requests
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "300"]
